@@ -1,0 +1,737 @@
+// Asset Tracker — Prisma schema (v1 draft)
+// Postgres. Multi-tenant via orgId on every domain row, app-enforced scoping.
+// See ARCHITECTURE.md for rationale.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ────────────────────────────────────────────────────────────
+//  Identity & tenant
+// ────────────────────────────────────────────────────────────
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  settings  Json     @default("{}") // dateFormat, currency, fiscalYearStartMonth
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships Membership[]
+  roles       Role[]
+  sites       Site[]
+  locations   Location[]
+  categories  Category[]
+  departments Department[]
+  persons     Person[]
+  companies   Company[]
+  fieldDefs   CustomFieldDef[]
+  assets      Asset[]
+  funds       Fund[]
+  contracts   Contract[]
+  policies    InsurancePolicy[]
+  inventory   InventoryItem[]
+  audits      Audit[]
+  attachments Attachment[]
+  alertRules  AlertRule[]
+  notifications Notification[]
+  activity    ActivityLog[]
+  savedViews  SavedView[]
+  reportRuns  ReportRun[]
+}
+
+model User {
+  id           String       @id @default(cuid())
+  email        String       @unique
+  name         String?
+  image        String?
+  passwordHash String?
+  twoFactorSecret String?
+  createdAt    DateTime     @default(now())
+  memberships  Membership[]
+}
+
+model Membership {
+  id     String  @id @default(cuid())
+  userId String
+  orgId  String
+  roleId String
+  status String  @default("ACTIVE") // ACTIVE | INVITED | DISABLED
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  role   Role         @relation(fields: [roleId], references: [id])
+
+  @@unique([userId, orgId])
+  @@index([orgId])
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  orgId       String
+  name        String
+  permissions String[] // e.g. "asset.create", "checkout.manage", "settings.manage"
+  isSystem    Boolean  @default(false)
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  memberships Membership[]
+
+  @@unique([orgId, name])
+}
+
+// ────────────────────────────────────────────────────────────
+//  Reference / structure data
+// ────────────────────────────────────────────────────────────
+
+model Site {
+  id        String   @id @default(cuid())
+  orgId     String
+  name      String
+  address   String?
+  lat       Float?
+  lng       Float?
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  locations Location[]
+  assets    Asset[]
+
+  @@unique([orgId, name])
+  @@index([orgId])
+}
+
+model Location {
+  id       String   @id @default(cuid())
+  orgId    String
+  siteId   String
+  parentId String?
+  name     String
+  org      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  site     Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  parent   Location?  @relation("LocationTree", fields: [parentId], references: [id])
+  children Location[] @relation("LocationTree")
+  assets   Asset[]
+
+  @@index([orgId])
+  @@index([siteId])
+}
+
+model Category {
+  id                   String  @id @default(cuid())
+  orgId                String
+  name                 String
+  depreciationMethod   DepreciationMethod @default(STRAIGHT_LINE)
+  defaultUsefulLifeMo  Int?
+  org        Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  fieldDefs  CustomFieldDef[]
+  assets     Asset[]
+  schedules  MaintenanceSchedule[]
+  invItems   InventoryItem[]
+
+  @@unique([orgId, name])
+  @@index([orgId])
+}
+
+model Department {
+  id     String @id @default(cuid())
+  orgId  String
+  name   String
+  org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  assets Asset[]
+
+  @@unique([orgId, name])
+  @@index([orgId])
+}
+
+model Person {
+  id     String  @id @default(cuid())
+  orgId  String
+  name   String
+  email  String?
+  phone  String?
+  userId String? // optional link to a login
+  org          Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  assigned     Asset[]        @relation("AssignedPerson")
+  checkouts    CheckoutRecord[]
+  reservations Reservation[]
+  maintenance  MaintenanceSchedule[]
+
+  @@index([orgId])
+}
+
+model Company {
+  id             String  @id @default(cuid())
+  orgId          String
+  name           String
+  isVendor       Boolean @default(false)
+  isManufacturer Boolean @default(false)
+  isCustomer     Boolean @default(false)
+  contactName    String?
+  email          String?
+  phone          String?
+  address        String?
+  org            Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  suppliedAssets Asset[]          @relation("Supplier")
+  contracts      Contract[]
+  leases         LeaseRecord[]
+
+  @@unique([orgId, name])
+  @@index([orgId])
+}
+
+model CustomFieldDef {
+  id         String   @id @default(cuid())
+  orgId      String
+  categoryId String?  // null = applies to all categories
+  key        String
+  label      String
+  type       CustomFieldType @default(TEXT)
+  options    String[] // for SELECT
+  required   Boolean  @default(false)
+  order      Int      @default(0)
+  org        Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  category   Category?    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  values     CustomFieldValue[]
+
+  @@unique([orgId, categoryId, key])
+  @@index([orgId])
+}
+
+// ────────────────────────────────────────────────────────────
+//  Assets
+// ────────────────────────────────────────────────────────────
+
+model Asset {
+  id               String   @id @default(cuid())
+  orgId            String
+  tagId            String
+  name             String
+  description      String?
+  serialNo         String?
+  status           AssetStatus @default(AVAILABLE)
+
+  categoryId       String?
+  siteId           String?
+  locationId       String?
+  departmentId     String?
+  assignedPersonId String?
+
+  purchaseDate     DateTime?
+  purchaseCost     Decimal? @db.Decimal(14, 2)
+  poNumber         String?
+  supplierId       String?
+  fundId           String?
+
+  depreciationMethod DepreciationMethod @default(STRAIGHT_LINE)
+  salvageValue       Decimal? @db.Decimal(14, 2)
+  usefulLifeMonths   Int?
+  depreciationStart  DateTime?
+  bookValue          Decimal? @db.Decimal(14, 2)
+
+  photoUrl  String?  // external link (Google Drive etc.), not an upload
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  org        Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  category   Category?   @relation(fields: [categoryId], references: [id])
+  site       Site?       @relation(fields: [siteId], references: [id])
+  location   Location?   @relation(fields: [locationId], references: [id])
+  department Department? @relation(fields: [departmentId], references: [id])
+  assignedPerson Person? @relation("AssignedPerson", fields: [assignedPersonId], references: [id])
+  supplier   Company?    @relation("Supplier", fields: [supplierId], references: [id])
+  fund       Fund?       @relation(fields: [fundId], references: [id])
+
+  fieldValues      CustomFieldValue[]
+  events           AssetEvent[]
+  checkouts        CheckoutRecord[]
+  leases           LeaseRecord[]
+  reservations     Reservation[]
+  moves            MoveRecord[]
+  disposal         DisposalRecord?
+  maintenance      MaintenanceRecord[]
+  schedules        MaintenanceSchedule[]
+  warranties       Warranty[]
+  contractLinks    ContractAsset[]
+  policyLinks      PolicyAsset[]
+  depreciationRows DepreciationEntry[]
+  auditScans       AuditScan[]
+
+  @@unique([orgId, tagId])
+  @@index([orgId])
+  @@index([orgId, status])
+  @@index([categoryId])
+  @@index([locationId])
+  @@index([assignedPersonId])
+}
+
+model CustomFieldValue {
+  id         String  @id @default(cuid())
+  assetId    String
+  fieldDefId String
+  valueText  String?
+  valueNumber Decimal? @db.Decimal(18, 4)
+  valueDate  DateTime?
+  valueBool  Boolean?
+  asset      Asset          @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  fieldDef   CustomFieldDef @relation(fields: [fieldDefId], references: [id], onDelete: Cascade)
+
+  @@unique([assetId, fieldDefId])
+}
+
+model AssetEvent {
+  id      String   @id @default(cuid())
+  assetId String
+  type    String   // CREATED | UPDATED | CHECKED_OUT | CHECKED_IN | MOVED | MAINTENANCE | DISPOSED | ...
+  at      DateTime @default(now())
+  actorId String?
+  summary String
+  dataJson Json    @default("{}")
+  asset   Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([assetId, at])
+}
+
+// ────────────────────────────────────────────────────────────
+//  Asset transactions
+// ────────────────────────────────────────────────────────────
+
+model CheckoutRecord {
+  id           String   @id @default(cuid())
+  orgId        String
+  assetId      String
+  personId     String?
+  toLocationId String?
+  checkedOutAt DateTime @default(now())
+  dueAt        DateTime?
+  checkedInAt  DateTime?
+  notes        String?
+  outByUserId  String
+  inByUserId   String?
+  asset  Asset   @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  person Person? @relation(fields: [personId], references: [id])
+
+  @@index([orgId])
+  @@index([assetId])
+  @@index([orgId, checkedInAt])
+}
+
+model LeaseRecord {
+  id                String   @id @default(cuid())
+  orgId             String
+  assetId           String
+  customerCompanyId String
+  startAt           DateTime
+  endAt             DateTime?
+  returnedAt        DateTime?
+  rate              Decimal? @db.Decimal(14, 2)
+  terms             String?
+  asset    Asset   @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  customer Company @relation(fields: [customerCompanyId], references: [id])
+
+  @@index([orgId])
+  @@index([assetId])
+}
+
+model Reservation {
+  id       String   @id @default(cuid())
+  orgId    String
+  assetId  String
+  personId String
+  fromAt   DateTime
+  toAt     DateTime
+  status   String   @default("PENDING") // PENDING | ACTIVE | RELEASED | CANCELLED
+  asset  Asset  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  person Person @relation(fields: [personId], references: [id])
+
+  @@index([orgId])
+  @@index([assetId, fromAt])
+}
+
+model MoveRecord {
+  id             String   @id @default(cuid())
+  orgId          String
+  assetId        String
+  fromSiteId     String?
+  fromLocationId String?
+  toSiteId       String?
+  toLocationId   String?
+  at             DateTime @default(now())
+  byUserId       String
+  notes          String?
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([assetId])
+}
+
+model DisposalRecord {
+  id       String   @id @default(cuid())
+  orgId    String
+  assetId  String   @unique
+  method   String   // SOLD | DONATED | SCRAPPED | LOST
+  at       DateTime @default(now())
+  proceeds Decimal? @db.Decimal(14, 2)
+  notes    String?
+  byUserId String
+  asset    Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+}
+
+// ────────────────────────────────────────────────────────────
+//  Maintenance
+// ────────────────────────────────────────────────────────────
+
+model MaintenanceSchedule {
+  id                 String   @id @default(cuid())
+  orgId              String
+  assetId            String?
+  categoryId         String?
+  title              String
+  intervalDays       Int?
+  fixedDates         Json?    // array of ISO dates
+  leadDays           Int      @default(7)
+  assignedToPersonId String?
+  active             Boolean  @default(true)
+  nextDueAt          DateTime?
+  asset      Asset?    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  assignedTo Person?   @relation(fields: [assignedToPersonId], references: [id])
+  records    MaintenanceRecord[]
+
+  @@index([orgId])
+  @@index([orgId, nextDueAt])
+}
+
+model MaintenanceRecord {
+  id            String   @id @default(cuid())
+  orgId         String
+  assetId       String
+  scheduleId    String?
+  dueAt         DateTime?
+  completedAt   DateTime?
+  technician    String?
+  workPerformed String?
+  cost          Decimal? @db.Decimal(14, 2)
+  status        MaintenanceStatus @default(SCHEDULED)
+  asset    Asset                @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  schedule MaintenanceSchedule? @relation(fields: [scheduleId], references: [id])
+
+  @@index([orgId])
+  @@index([assetId])
+  @@index([orgId, status])
+}
+
+// ────────────────────────────────────────────────────────────
+//  Coverage / financial
+// ────────────────────────────────────────────────────────────
+
+model Warranty {
+  id       String   @id @default(cuid())
+  orgId    String
+  assetId  String
+  provider String?
+  startAt  DateTime?
+  endAt    DateTime
+  terms    String?
+  leadDays Int      @default(30)
+  asset    Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([orgId, endAt])
+}
+
+model Contract {
+  id             String   @id @default(cuid())
+  orgId          String
+  type           String   // SERVICE | LEASE | SUPPORT
+  name           String
+  vendorCompanyId String?
+  startAt        DateTime?
+  endAt          DateTime?
+  value          Decimal? @db.Decimal(14, 2)
+  autoRenew      Boolean  @default(false)
+  leadDays       Int      @default(30)
+  org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  vendor Company?     @relation(fields: [vendorCompanyId], references: [id])
+  assets ContractAsset[]
+
+  @@index([orgId])
+  @@index([orgId, endAt])
+}
+
+model ContractAsset {
+  contractId String
+  assetId    String
+  contract   Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  asset      Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@id([contractId, assetId])
+}
+
+model InsurancePolicy {
+  id             String   @id @default(cuid())
+  orgId          String
+  provider       String
+  policyNo       String?
+  coverageAmount Decimal? @db.Decimal(14, 2)
+  startAt        DateTime?
+  endAt          DateTime?
+  leadDays       Int      @default(30)
+  org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  assets PolicyAsset[]
+
+  @@index([orgId])
+  @@index([orgId, endAt])
+}
+
+model PolicyAsset {
+  policyId String
+  assetId  String
+  policy   InsurancePolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  asset    Asset           @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@id([policyId, assetId])
+}
+
+model Fund {
+  id     String  @id @default(cuid())
+  orgId  String
+  name   String
+  code   String?
+  amount Decimal? @db.Decimal(14, 2)
+  source String?
+  org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  assets Asset[]
+
+  @@unique([orgId, name])
+  @@index([orgId])
+}
+
+model DepreciationEntry {
+  id        String   @id @default(cuid())
+  orgId     String
+  assetId   String
+  periodEnd DateTime
+  amount    Decimal  @db.Decimal(14, 2)
+  bookValue Decimal  @db.Decimal(14, 2)
+  asset     Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([assetId, periodEnd])
+  @@index([orgId])
+}
+
+// ────────────────────────────────────────────────────────────
+//  Inventory (consumables)
+// ────────────────────────────────────────────────────────────
+
+model InventoryItem {
+  id                 String  @id @default(cuid())
+  orgId              String
+  sku                String
+  name               String
+  unit               String  @default("ea")
+  categoryId         String?
+  defaultReorderPoint Int?
+  org      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  category Category?    @relation(fields: [categoryId], references: [id])
+  stock    InventoryStock[]
+  txns     InventoryTxn[]
+
+  @@unique([orgId, sku])
+  @@index([orgId])
+}
+
+model InventoryStock {
+  id           String @id @default(cuid())
+  orgId        String
+  itemId       String
+  locationId   String
+  quantity     Int    @default(0)
+  reorderPoint Int?
+  item     InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([itemId, locationId])
+  @@index([orgId])
+}
+
+model InventoryTxn {
+  id         String   @id @default(cuid())
+  orgId      String
+  itemId     String
+  locationId String
+  delta      Int
+  type       String   // RECEIVE | ISSUE | ADJUST | TRANSFER_IN | TRANSFER_OUT
+  reason     String?
+  at         DateTime @default(now())
+  byUserId   String
+  item       InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([itemId, at])
+}
+
+// ────────────────────────────────────────────────────────────
+//  Audit
+// ────────────────────────────────────────────────────────────
+
+model Audit {
+  id         String   @id @default(cuid())
+  orgId      String
+  name       String
+  siteId     String?
+  locationId String?
+  categoryId String?
+  status     String   @default("OPEN") // OPEN | CLOSED
+  startedAt  DateTime @default(now())
+  closedAt   DateTime?
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  scans AuditScan[]
+
+  @@index([orgId])
+}
+
+model AuditScan {
+  id              String   @id @default(cuid())
+  auditId         String
+  assetId         String?
+  rawTag          String
+  scannedAt       DateTime @default(now())
+  foundLocationId String?
+  result          String   // FOUND | MOVED | UNEXPECTED
+  audit Audit  @relation(fields: [auditId], references: [id], onDelete: Cascade)
+  asset Asset? @relation(fields: [assetId], references: [id])
+
+  @@index([auditId])
+}
+
+// ────────────────────────────────────────────────────────────
+//  Platform
+// ────────────────────────────────────────────────────────────
+
+model Attachment {
+  id         String   @id @default(cuid())
+  orgId      String
+  entityType String   // ASSET | CONTRACT | MAINTENANCE | POLICY | ...
+  entityId   String
+  url        String   // external link (Google Drive etc.) — no file bytes stored
+  label      String?
+  kind       String   @default("DOCUMENT") // PHOTO | DOCUMENT
+  addedById  String
+  createdAt  DateTime @default(now())
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, entityType, entityId])
+}
+
+model AlertRule {
+  id           String   @id @default(cuid())
+  orgId        String
+  type         String   // CHECKOUT_OVERDUE | MAINT_DUE | WARRANTY_EXPIRY | CONTRACT_EXPIRY | POLICY_EXPIRY | LOW_STOCK
+  thresholdDays Int     @default(30)
+  recipients   Json     @default("[]") // array of emails or personIds
+  cadence      String   @default("DAILY") // IMMEDIATE | DAILY
+  active       Boolean  @default(true)
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, type])
+}
+
+model Notification {
+  id         String   @id @default(cuid())
+  orgId      String
+  type       String
+  entityType String
+  entityId   String
+  message    String
+  period     String   // dedup key, e.g. "2026-08" or ISO date
+  emailedAt  DateTime?
+  readAt     DateTime?
+  createdAt  DateTime @default(now())
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, type, entityId, period])
+  @@index([orgId, readAt])
+}
+
+model ActivityLog {
+  id         String   @id @default(cuid())
+  orgId      String
+  actorId    String?
+  entityType String
+  entityId   String
+  action     String
+  beforeJson Json?
+  afterJson  Json?
+  ip         String?
+  at         DateTime @default(now())
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, at])
+  @@index([orgId, entityType, entityId])
+}
+
+model SavedView {
+  id         String @id @default(cuid())
+  orgId      String
+  userId     String?
+  entity     String // ASSET | MAINTENANCE | ...
+  name       String
+  configJson Json
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, entity])
+}
+
+model ReportRun {
+  id            String   @id @default(cuid())
+  orgId         String
+  reportKey     String
+  paramsJson    Json     @default("{}")
+  fileKey       String?
+  format        String   // CSV | PDF
+  requestedById String
+  createdAt     DateTime @default(now())
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, reportKey])
+}
+
+// ────────────────────────────────────────────────────────────
+//  Enums
+// ────────────────────────────────────────────────────────────
+
+enum AssetStatus {
+  AVAILABLE
+  CHECKED_OUT
+  LEASED
+  RESERVED
+  UNDER_REPAIR
+  DISPOSED
+  LOST
+}
+
+enum DepreciationMethod {
+  STRAIGHT_LINE
+  DECLINING_BALANCE_200
+  DECLINING_BALANCE_150
+  SUM_OF_YEARS_DIGITS
+  NONE
+}
+
+enum MaintenanceStatus {
+  SCHEDULED
+  OVERDUE
+  DONE
+  SKIPPED
+}
+
+enum CustomFieldType {
+  TEXT
+  NUMBER
+  DATE
+  BOOL
+  SELECT
+}
