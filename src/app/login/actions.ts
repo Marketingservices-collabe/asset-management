@@ -1,7 +1,9 @@
 "use server";
 
 import { AuthError } from "next-auth";
+import { redirect } from "next/navigation";
 import { signIn, TWO_FACTOR_CODE } from "@/lib/auth";
+import { safeCallbackUrl } from "@/lib/utils";
 
 export type LoginState = { error?: string; needsTotp?: boolean };
 
@@ -12,10 +14,12 @@ export async function loginWithPassword(
   const email = String(formData.get("email") ?? "");
   const password = String(formData.get("password") ?? "");
   const totp = String(formData.get("totp") ?? "");
-  const callbackUrl = String(formData.get("callbackUrl") || "/dashboard");
+  const callbackUrl = safeCallbackUrl(formData.get("callbackUrl"));
 
   try {
-    await signIn("credentials", { email, password, totp, redirectTo: callbackUrl });
+    // redirect: false — Auth.js's own redirect can produce a doubled target
+    // ("/dashboard, /dashboard"); we redirect ourselves to a sanitised path below.
+    await signIn("credentials", { email, password, totp, redirect: false });
   } catch (err) {
     if (err instanceof AuthError) {
       const code = (err as AuthError & { code?: string }).code;
@@ -24,12 +28,11 @@ export async function loginWithPassword(
       }
       return { error: "Invalid email or password." };
     }
-    throw err; // redirect() throws here — must rethrow
+    throw err;
   }
-  return {};
+  redirect(callbackUrl);
 }
 
 export async function loginWithGoogle(formData: FormData) {
-  const callbackUrl = String(formData.get("callbackUrl") || "/dashboard");
-  await signIn("google", { redirectTo: callbackUrl });
+  await signIn("google", { redirectTo: safeCallbackUrl(formData.get("callbackUrl")) });
 }

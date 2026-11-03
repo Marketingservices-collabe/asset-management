@@ -6,6 +6,7 @@ import { loginWithPassword, loginWithGoogle, type LoginState } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
+import { safeCallbackUrl } from "@/lib/utils";
 
 const googleEnabled = process.env.NEXT_PUBLIC_GOOGLE_ENABLED === "1";
 
@@ -19,7 +20,7 @@ export default function LoginPage() {
 
 function LoginForm() {
   const params = useSearchParams();
-  const callbackUrl = params.get("callbackUrl") ?? "/dashboard";
+  const callbackUrl = safeCallbackUrl(params.get("callbackUrl"));
   const [state, action, pending] = useActionState<LoginState, FormData>(loginWithPassword, {});
 
   return (
