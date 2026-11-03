@@ -54,7 +54,8 @@ export function AssetForm({
 }) {
   const [state, formAction] = useActionState(action, EMPTY_FORM_STATE);
   const [categoryId, setCategoryId] = useState(str(initial?.categoryId));
-  const [siteId, setSiteId] = useState(str(initial?.siteId));
+  const singleSite = options.sites.length === 1;
+  const [siteId, setSiteId] = useState(str(initial?.siteId) || (singleSite ? options.sites[0].value : ""));
 
   const v = (name: string) => {
     if (state.values && name in state.values) return state.values[name];
@@ -63,6 +64,11 @@ export function AssetForm({
   const err = (name: string) => state.fieldErrors?.[name];
   const cfVal = (id: string) => state.values?.[`cf_${id}`] ?? customValues?.[id] ?? "";
 
+  // open "More options" when editing something that already uses those fields, or on a validation error there
+  const advancedKeys = ["photoUrl", "description", "poNumber", "fundId", "salvageValue", "usefulLifeMonths", "depreciationStart"];
+  const hasAdvanced =
+    advancedKeys.some((k) => v(k) !== "" || err(k)) || (v("depreciationMethod") !== "" && v("depreciationMethod") !== "NONE");
+
   const visibleLocations = siteId ? options.locations.filter((l) => l.siteId === siteId) : options.locations;
   const visibleDefs = options.fieldDefs.filter((d) => d.categoryId === null || d.categoryId === categoryId);
 
@@ -70,47 +76,34 @@ export function AssetForm({
     <form action={formAction} className="space-y-5">
       {initial?.id ? <input type="hidden" name="id" value={String(initial.id)} /> : null}
 
-      <Section title="Identity">
+      <Section title="Basics">
         <TextField
           label="Asset tag ID"
           name="tagId"
           required
           defaultValue={v("tagId")}
           error={err("tagId")}
-          hint="Printed on the barcode/QR label. Must be unique."
+          hint="The code on the sticker, e.g. ZT-L-1030. Must be unique."
         />
-        <TextField label="Name" name="name" required defaultValue={v("name")} error={err("name")} />
-        <TextField label="Serial number" name="serialNo" defaultValue={v("serialNo")} error={err("serialNo")} />
-        <TextField
-          label="Photo URL"
-          name="photoUrl"
-          type="url"
-          defaultValue={v("photoUrl")}
-          error={err("photoUrl")}
-          hint="Link to an image (Google Drive, etc.)."
-        />
-        <div className="sm:col-span-2">
-          <TextareaField label="Description" name="description" defaultValue={v("description")} error={err("description")} />
-        </div>
-      </Section>
-
-      <Section title="Classification">
+        <TextField label="Name" name="name" required defaultValue={v("name")} error={err("name")} hint="e.g. MacBook Pro, Monitor, Headset" />
         <SelectField
-          label="Category"
+          label="Type"
           name="categoryId"
           options={options.categories}
           placeholder="—"
           value={categoryId}
           onChange={(e) => setCategoryId(e.target.value)}
         />
+        <TextField label="Serial number" name="serialNo" defaultValue={v("serialNo")} error={err("serialNo")} />
         <SelectField
-          label="Site"
-          name="siteId"
-          options={options.sites}
-          placeholder="—"
-          value={siteId}
-          onChange={(e) => setSiteId(e.target.value)}
+          label="Assigned to"
+          name="assignedPersonId"
+          options={options.people}
+          placeholder="— Nobody (spare) —"
+          defaultValue={v("assignedPersonId")}
         />
+        <SelectField label="Department" name="departmentId" options={options.departments} placeholder="—" defaultValue={v("departmentId")} />
+        {singleSite ? <input type="hidden" name="siteId" value={siteId} /> : null}
         <SelectField
           label="Location"
           name="locationId"
@@ -118,44 +111,62 @@ export function AssetForm({
           placeholder="—"
           defaultValue={v("locationId")}
         />
-        <SelectField label="Department" name="departmentId" options={options.departments} placeholder="—" defaultValue={v("departmentId")} />
-        <SelectField
-          label="Assigned to"
-          name="assignedPersonId"
-          options={options.people}
-          placeholder="—"
-          defaultValue={v("assignedPersonId")}
-        />
-      </Section>
-
-      <Section title="Purchase & funding">
-        <TextField label="Purchase date" name="purchaseDate" type="date" defaultValue={v("purchaseDate")} error={err("purchaseDate")} />
-        <TextField label="Purchase cost" name="purchaseCost" type="number" step="any" defaultValue={v("purchaseCost")} error={err("purchaseCost")} />
-        <TextField label="PO number" name="poNumber" defaultValue={v("poNumber")} error={err("poNumber")} />
-        <SelectField label="Supplier" name="supplierId" options={options.companies} placeholder="—" defaultValue={v("supplierId")} />
-        <SelectField label="Fund / grant" name="fundId" options={options.funds} placeholder="—" defaultValue={v("fundId")} />
-      </Section>
-
-      <Section title="Depreciation">
-        <SelectField
-          label="Method"
-          name="depreciationMethod"
-          required
-          options={DEP_METHODS.map((m) => ({ value: m, label: DEP_LABELS[m] }))}
-          defaultValue={v("depreciationMethod") || "NONE"}
-        />
-        <TextField label="Salvage value" name="salvageValue" type="number" step="any" defaultValue={v("salvageValue")} error={err("salvageValue")} />
-        <TextField label="Useful life (months)" name="usefulLifeMonths" type="number" defaultValue={v("usefulLifeMonths")} error={err("usefulLifeMonths")} />
-        <TextField label="Depreciation start" name="depreciationStart" type="date" defaultValue={v("depreciationStart")} error={err("depreciationStart")} hint="Defaults to purchase date." />
       </Section>
 
       {visibleDefs.length > 0 ? (
-        <Section title="Custom fields">
+        <Section title="Specs & details">
           {visibleDefs.map((d) => (
             <CustomFieldInput key={d.id} def={d} value={cfVal(d.id)} />
           ))}
         </Section>
       ) : null}
+
+      <Section title="Purchase">
+        <TextField label="Purchase date" name="purchaseDate" type="date" defaultValue={v("purchaseDate")} error={err("purchaseDate")} />
+        <TextField label="Cost (₹)" name="purchaseCost" type="number" step="any" defaultValue={v("purchaseCost")} error={err("purchaseCost")} />
+        <SelectField label="Bought from" name="supplierId" options={options.companies} placeholder="—" defaultValue={v("supplierId")} />
+      </Section>
+
+      <details className="group rounded-xl border border-[var(--border)] bg-[var(--card)]" open={hasAdvanced || undefined}>
+        <summary className="cursor-pointer select-none px-5 py-3 text-sm font-semibold text-[var(--muted)] hover:text-[var(--fg)]">
+          More options <span className="font-normal">(photo, notes, PO number, depreciation…)</span>
+        </summary>
+        <div className="grid gap-4 border-t border-[var(--border)] p-5 sm:grid-cols-2">
+          {!singleSite ? (
+            <SelectField
+              label="Site"
+              name="siteId"
+              options={options.sites}
+              placeholder="—"
+              value={siteId}
+              onChange={(e) => setSiteId(e.target.value)}
+            />
+          ) : null}
+          <TextField
+            label="Photo URL"
+            name="photoUrl"
+            type="url"
+            defaultValue={v("photoUrl")}
+            error={err("photoUrl")}
+            hint="Link to an image (Google Drive, etc.)."
+          />
+          <div className="sm:col-span-2">
+            <TextareaField label="Notes / description" name="description" defaultValue={v("description")} error={err("description")} />
+          </div>
+          <TextField label="PO number" name="poNumber" defaultValue={v("poNumber")} error={err("poNumber")} />
+          <SelectField label="Fund / grant" name="fundId" options={options.funds} placeholder="—" defaultValue={v("fundId")} />
+          <SelectField
+            label="Depreciation method"
+            name="depreciationMethod"
+            required
+            options={DEP_METHODS.map((m) => ({ value: m, label: DEP_LABELS[m] }))}
+            defaultValue={v("depreciationMethod") || "NONE"}
+          />
+          <TextField label="Salvage value" name="salvageValue" type="number" step="any" defaultValue={v("salvageValue")} error={err("salvageValue")} />
+          <TextField label="Useful life (months)" name="usefulLifeMonths" type="number" defaultValue={v("usefulLifeMonths")} error={err("usefulLifeMonths")} />
+          <TextField label="Depreciation start" name="depreciationStart" type="date" defaultValue={v("depreciationStart")} error={err("depreciationStart")} hint="Defaults to purchase date." />
+        </div>
+      </details>
 
       {state.error ? <p className="text-sm text-red-600">{state.error}</p> : null}
 

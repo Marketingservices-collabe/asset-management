@@ -32,20 +32,22 @@ export type NavItem = {
   icon: LucideIcon;
   perm?: Permission;
   group: "Overview" | "Assets" | "Operations" | "Finance" | "Setup" | "Admin";
+  /** Everyday items shown at the top of the sidebar; the rest sit under "More tools". */
+  primary?: boolean;
 };
 
 export const NAV: NavItem[] = [
-  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, group: "Overview" },
+  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, group: "Overview", primary: true },
   { label: "Notifications", href: "/notifications", icon: Bell, group: "Overview" },
 
-  { label: "Assets", href: "/assets", icon: Boxes, perm: PERMISSIONS.ASSET_VIEW, group: "Assets" },
-  { label: "Check-in / out", href: "/checkout", icon: ArrowLeftRight, perm: PERMISSIONS.CHECKOUT_MANAGE, group: "Assets" },
+  { label: "Assets", href: "/assets", icon: Boxes, perm: PERMISSIONS.ASSET_VIEW, group: "Assets", primary: true },
+  { label: "Check-in / out", href: "/checkout", icon: ArrowLeftRight, perm: PERMISSIONS.CHECKOUT_MANAGE, group: "Assets", primary: true },
   { label: "Reservations", href: "/reservations", icon: CalendarClock, perm: PERMISSIONS.RESERVATION_MANAGE, group: "Assets" },
   { label: "Maintenance", href: "/maintenance", icon: Wrench, perm: PERMISSIONS.MAINTENANCE_VIEW, group: "Assets" },
 
   { label: "Inventory", href: "/inventory", icon: PackageSearch, perm: PERMISSIONS.INVENTORY_VIEW, group: "Operations" },
   { label: "Audits", href: "/audits", icon: ClipboardCheck, perm: PERMISSIONS.AUDIT_RUN, group: "Operations" },
-  { label: "Reports", href: "/reports", icon: BarChart3, perm: PERMISSIONS.REPORT_VIEW, group: "Operations" },
+  { label: "Reports", href: "/reports", icon: BarChart3, perm: PERMISSIONS.REPORT_VIEW, group: "Operations", primary: true },
   { label: "Activity log", href: "/activity", icon: ScrollText, perm: PERMISSIONS.ACTIVITY_VIEW, group: "Operations" },
 
   { label: "Warranties", href: "/warranties", icon: ShieldCheck, perm: PERMISSIONS.FINANCIALS_VIEW, group: "Finance" },
@@ -54,10 +56,10 @@ export const NAV: NavItem[] = [
   { label: "Funds", href: "/funds", icon: Landmark, perm: PERMISSIONS.FINANCIALS_VIEW, group: "Finance" },
   { label: "Depreciation", href: "/depreciation", icon: TrendingDown, perm: PERMISSIONS.FINANCIALS_VIEW, group: "Finance" },
 
-  { label: "Sites & locations", href: "/setup/locations", icon: MapPin, perm: PERMISSIONS.SETUP_MANAGE, group: "Setup" },
+  { label: "Locations", href: "/setup/locations", icon: MapPin, perm: PERMISSIONS.SETUP_MANAGE, group: "Setup" },
   { label: "Categories", href: "/setup/categories", icon: Tags, perm: PERMISSIONS.SETUP_MANAGE, group: "Setup" },
   { label: "Departments", href: "/setup/departments", icon: Building2, perm: PERMISSIONS.SETUP_MANAGE, group: "Setup" },
-  { label: "People", href: "/setup/people", icon: Users, perm: PERMISSIONS.SETUP_MANAGE, group: "Setup" },
+  { label: "People", href: "/setup/people", icon: Users, perm: PERMISSIONS.SETUP_MANAGE, group: "Setup", primary: true },
   { label: "Companies", href: "/setup/companies", icon: Building2, perm: PERMISSIONS.SETUP_MANAGE, group: "Setup" },
   { label: "Custom fields", href: "/setup/fields", icon: SlidersHorizontal, perm: PERMISSIONS.SETUP_MANAGE, group: "Setup" },
   { label: "Import", href: "/setup/import", icon: Upload, perm: PERMISSIONS.ASSET_CREATE, group: "Setup" },

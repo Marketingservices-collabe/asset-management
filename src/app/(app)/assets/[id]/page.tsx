@@ -81,7 +81,7 @@ export default async function AssetDetailPage({ params }: { params: Promise<{ id
   ]);
 
   const details: [string, React.ReactNode][] = [
-    ["Category", asset.category?.name ?? "—"],
+    ["Type", asset.category?.name ?? "—"],
     ["Serial number", asset.serialNo ?? "—"],
     ["Site", asset.site?.name ?? "—"],
     ["Location", asset.location?.name ?? "—"],
@@ -94,21 +94,25 @@ export default async function AssetDetailPage({ params }: { params: Promise<{ id
     ],
   ];
 
-  const financials: [string, React.ReactNode][] = [
-    ["Purchase date", formatDate(asset.purchaseDate)],
-    ["Purchase cost", formatMoney(asset.purchaseCost ? Number(asset.purchaseCost) : null)],
-    ["PO number", asset.poNumber ?? "—"],
-    ["Supplier", asset.supplier?.name ?? "—"],
-    ["Fund / grant", asset.fund?.name ?? "—"],
-    ["Depreciation", DEP_LABELS[asset.depreciationMethod] ?? asset.depreciationMethod],
-    ["Useful life", asset.usefulLifeMonths ? `${asset.usefulLifeMonths} months` : "—"],
+  // Only show purchase/finance rows that actually have something in them.
+  const depreciates = asset.depreciationMethod !== "NONE" && !!asset.usefulLifeMonths;
+  const financialRows: [string, React.ReactNode, boolean][] = [
+    ["Purchase date", formatDate(asset.purchaseDate), !!asset.purchaseDate],
+    ["Cost", formatMoney(asset.purchaseCost ? Number(asset.purchaseCost) : null), asset.purchaseCost != null],
+    ["Bought from", asset.supplier?.name ?? "—", !!asset.supplier],
+    ["PO number", asset.poNumber ?? "—", !!asset.poNumber],
+    ["Fund / grant", asset.fund?.name ?? "—", !!asset.fund],
+    ["Depreciation", DEP_LABELS[asset.depreciationMethod] ?? asset.depreciationMethod, depreciates],
+    ["Useful life", asset.usefulLifeMonths ? `${asset.usefulLifeMonths} months` : "—", depreciates],
     [
       "Book value",
       asset.bookValue != null
         ? `${formatMoney(Number(asset.bookValue))} · ${monthsElapsed(asset.depreciationStart ?? asset.purchaseDate)} mo elapsed`
         : "—",
+      depreciates,
     ],
   ];
+  const financials = financialRows.filter(([, , show]) => show).map(([k, val]) => [k, val] as [string, React.ReactNode]);
 
   return (
     <>
@@ -140,9 +144,9 @@ export default async function AssetDetailPage({ params }: { params: Promise<{ id
             </dl>
           </Card>
 
-          {showFinancials ? (
+          {showFinancials && financials.length > 0 ? (
             <Card>
-              <SectionTitle>Purchase &amp; depreciation</SectionTitle>
+              <SectionTitle>Purchase</SectionTitle>
               <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
                 {financials.map(([k, val]) => (
                   <div key={k} className="flex justify-between gap-4 text-sm">
@@ -156,7 +160,7 @@ export default async function AssetDetailPage({ params }: { params: Promise<{ id
 
           {asset.fieldValues.length > 0 ? (
             <Card>
-              <SectionTitle>Custom fields</SectionTitle>
+              <SectionTitle>Specs &amp; details</SectionTitle>
               <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
                 {asset.fieldValues.map((fv) => (
                   <div key={fv.id} className="flex justify-between gap-4 text-sm">
@@ -168,44 +172,46 @@ export default async function AssetDetailPage({ params }: { params: Promise<{ id
             </Card>
           ) : null}
 
-          <Card>
-            <div className="mb-3 flex items-center justify-between">
-              <SectionTitle className="mb-0">Maintenance</SectionTitle>
-              {canMaintain ? (
-                <div className="flex gap-3 text-sm">
-                  <Link href="/maintenance?form=schedule" className="text-brand hover:underline">
-                    Schedule
-                  </Link>
-                  <Link href="/maintenance?form=log" className="text-brand hover:underline">
-                    Log work
-                  </Link>
-                </div>
-              ) : null}
-            </div>
-            {asset.maintenance.length === 0 ? (
-              <p className="text-sm text-[var(--muted)]">No maintenance records.</p>
-            ) : (
-              <ul className="space-y-2 text-sm">
-                {asset.maintenance.map((m) => {
-                  const eff = effectiveStatus(m.status, m.dueAt);
-                  return (
-                    <li key={m.id} className="flex items-center justify-between gap-3">
-                      <span className="flex items-center gap-2">
-                        <Wrench size={14} className="text-[var(--muted)]" />
-                        {m.schedule?.title ?? m.workPerformed ?? "Maintenance"}
-                      </span>
-                      <span className="flex items-center gap-2 text-[var(--muted)]">
-                        {m.completedAt ? formatDate(m.completedAt) : formatDate(m.dueAt)}
-                        <StatusBadge status={eff} />
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </Card>
+          {asset.maintenance.length > 0 ? (
+            <Card>
+              <div className="mb-3 flex items-center justify-between">
+                <SectionTitle className="mb-0">Maintenance</SectionTitle>
+                {canMaintain ? (
+                  <div className="flex gap-3 text-sm">
+                    <Link href="/maintenance?form=schedule" className="text-brand hover:underline">
+                      Schedule
+                    </Link>
+                    <Link href="/maintenance?form=log" className="text-brand hover:underline">
+                      Log work
+                    </Link>
+                  </div>
+                ) : null}
+              </div>
+              {asset.maintenance.length === 0 ? (
+                <p className="text-sm text-[var(--muted)]">No maintenance records.</p>
+              ) : (
+                <ul className="space-y-2 text-sm">
+                  {asset.maintenance.map((m) => {
+                    const eff = effectiveStatus(m.status, m.dueAt);
+                    return (
+                      <li key={m.id} className="flex items-center justify-between gap-3">
+                        <span className="flex items-center gap-2">
+                          <Wrench size={14} className="text-[var(--muted)]" />
+                          {m.schedule?.title ?? m.workPerformed ?? "Maintenance"}
+                        </span>
+                        <span className="flex items-center gap-2 text-[var(--muted)]">
+                          {m.completedAt ? formatDate(m.completedAt) : formatDate(m.dueAt)}
+                          <StatusBadge status={eff} />
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </Card>
+          ) : null}
 
-          {showFinancials && (hasCoverage || canFinance) ? (
+          {showFinancials && hasCoverage ? (
             <Card>
               <div className="mb-3 flex items-center justify-between">
                 <SectionTitle className="mb-0">Coverage</SectionTitle>

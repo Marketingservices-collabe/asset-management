@@ -5,11 +5,12 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatMoney(value: number | string | null | undefined, currency = "USD") {
+/** Money is shown in Indian rupees (₹1,20,000) — ZenTrades' devices are bought in INR. */
+export function formatMoney(value: number | string | null | undefined, currency = "INR") {
   if (value == null || value === "") return "—";
   const n = typeof value === "string" ? Number(value) : value;
   if (Number.isNaN(n)) return "—";
-  return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(n);
+  return new Intl.NumberFormat("en-IN", { style: "currency", currency, maximumFractionDigits: 0 }).format(n);
 }
 
 export function formatDate(d: Date | string | null | undefined) {

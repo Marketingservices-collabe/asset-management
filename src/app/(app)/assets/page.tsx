@@ -4,7 +4,6 @@ import { requireContext } from "@/lib/session";
 import { db } from "@/lib/db";
 import { can, PERMISSIONS } from "@/lib/authz";
 import { STATUS_LABELS, ASSET_STATUSES } from "@/lib/assets";
-import { formatMoney } from "@/lib/utils";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Table, Th, Td, TrLink, EmptyRow } from "@/components/ui/table";
@@ -34,6 +33,8 @@ export default async function AssetsPage({ searchParams }: { searchParams: Promi
       { name: { contains: sp.q, mode: "insensitive" } },
       { tagId: { contains: sp.q, mode: "insensitive" } },
       { serialNo: { contains: sp.q, mode: "insensitive" } },
+      { assignedPerson: { name: { contains: sp.q, mode: "insensitive" } } },
+      { fieldValues: { some: { valueText: { contains: sp.q, mode: "insensitive" } } } },
     ];
   }
   if (sp.category) where.categoryId = sp.category;
@@ -52,6 +53,11 @@ export default async function AssetsPage({ searchParams }: { searchParams: Promi
         site: { select: { name: true } },
         location: { select: { name: true } },
         assignedPerson: { select: { name: true } },
+        department: { select: { name: true } },
+        fieldValues: {
+          where: { fieldDef: { key: { in: ["brand", "model"] } } },
+          select: { valueText: true, fieldDef: { select: { key: true } } },
+        },
       },
     }),
     db.asset.count({ where }),
@@ -97,25 +103,27 @@ export default async function AssetsPage({ searchParams }: { searchParams: Promi
         <input
           name="q"
           defaultValue={sp.q ?? ""}
-          placeholder="Search name, tag, serial…"
-          className="h-9 w-60 rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3 text-sm outline-none focus:ring-2 focus:ring-brand/30"
+          placeholder="Search tag, name, serial, person, brand…"
+          className="h-9 w-72 rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3 text-sm outline-none focus:ring-2 focus:ring-brand/30"
         />
         <select name="category" defaultValue={sp.category ?? ""} className="h-9 rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-2 text-sm">
-          <option value="">All categories</option>
+          <option value="">All types</option>
           {categories.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name}
             </option>
           ))}
         </select>
-        <select name="site" defaultValue={sp.site ?? ""} className="h-9 rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-2 text-sm">
-          <option value="">All sites</option>
-          {sites.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </select>
+        {sites.length > 1 ? (
+          <select name="site" defaultValue={sp.site ?? ""} className="h-9 rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-2 text-sm">
+            <option value="">All sites</option>
+            {sites.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        ) : null}
         <select name="status" defaultValue={sp.status ?? ""} className="h-9 rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-2 text-sm">
           <option value="">Any status</option>
           {ASSET_STATUSES.map((s) => (
@@ -141,11 +149,11 @@ export default async function AssetsPage({ searchParams }: { searchParams: Promi
               <Th className="w-8"></Th>
               <Th>Tag</Th>
               <Th>Name</Th>
-              <Th>Category</Th>
-              <Th>Location</Th>
-              <Th>Assigned</Th>
+              <Th>Brand / model</Th>
+              <Th>Type</Th>
+              <Th>Assigned to</Th>
+              <Th>Department</Th>
               <Th>Status</Th>
-              <Th className="text-right">Book value</Th>
             </tr>
           </thead>
           <tbody>
@@ -157,23 +165,23 @@ export default async function AssetsPage({ searchParams }: { searchParams: Promi
                   <Td>
                     <input type="checkbox" name="ids" value={a.id} aria-label={`Select ${a.tagId}`} />
                   </Td>
-                  <Td className="font-mono text-xs">
+                  <Td className="whitespace-nowrap font-mono text-xs">
                     <Link href={`/assets/${a.id}`} className="text-brand hover:underline">
                       {a.tagId}
                     </Link>
                   </Td>
-                  <Td>
+                  <Td className="whitespace-nowrap">
                     <Link href={`/assets/${a.id}`} className="hover:underline">
                       {a.name}
                     </Link>
                   </Td>
+                  <Td className="text-[var(--muted)]">{brandModel(a.fieldValues)}</Td>
                   <Td>{a.category?.name ?? "—"}</Td>
-                  <Td>{[a.site?.name, a.location?.name].filter(Boolean).join(" › ") || "—"}</Td>
                   <Td>{a.assignedPerson?.name ?? "—"}</Td>
-                  <Td>
+                  <Td className="text-[var(--muted)]">{a.department?.name ?? "—"}</Td>
+                  <Td className="whitespace-nowrap">
                     <StatusBadge status={a.status} />
                   </Td>
-                  <Td className="text-right tabular-nums">{formatMoney(a.bookValue ? Number(a.bookValue) : null)}</Td>
                 </TrLink>
               ))
             )}
@@ -218,4 +226,12 @@ export default async function AssetsPage({ searchParams }: { searchParams: Promi
       </form>
     </>
   );
+}
+
+function brandModel(values: { valueText: string | null; fieldDef: { key: string } }[]): string {
+  const get = (k: string) => values.find((v) => v.fieldDef.key === k)?.valueText ?? "";
+  const brand = get("brand");
+  const model = get("model");
+  const text = [brand, model && model !== "Not Sure" ? model : ""].filter(Boolean).join(" · ");
+  return text || "—";
 }
