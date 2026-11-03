@@ -177,13 +177,18 @@ export function parseCustomFields(
   return { values, error: null };
 }
 
-/** Suggest the next sequential tag id like "AT-0042". */
+/**
+ * Suggest the next sequential tag id like "AT-0042". Orgs that use their own
+ * scheme (e.g. ZT-L-1030 imported from AssetTiger) get no suggestion, so we
+ * never pre-fill a tag in the wrong format.
+ */
 export async function suggestNextTag(orgId: string): Promise<string> {
   const last = await db.asset.findFirst({
     where: { orgId, tagId: { startsWith: "AT-" } },
     orderBy: { tagId: "desc" },
     select: { tagId: true },
   });
+  if (!last && (await db.asset.count({ where: { orgId } })) > 0) return "";
   const n = last ? parseInt(last.tagId.replace("AT-", ""), 10) : 0;
   const next = Number.isNaN(n) ? 1 : n + 1;
   return `AT-${String(next).padStart(4, "0")}`;

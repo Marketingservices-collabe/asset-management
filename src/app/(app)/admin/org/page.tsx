@@ -20,7 +20,7 @@ export default async function OrgSettingsPage() {
         <OrgForm
           initial={{
             name: org?.name ?? "",
-            currency: typeof settings.currency === "string" ? settings.currency : "USD",
+            currency: typeof settings.currency === "string" ? settings.currency : "INR",
             dateFormat: typeof settings.dateFormat === "string" ? settings.dateFormat : "MMM d, yyyy",
             fiscalYearStartMonth:
               typeof settings.fiscalYearStartMonth === "number" ? settings.fiscalYearStartMonth : 1,

@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { formatMoney } from "@/lib/utils";
 import { db } from "@/lib/db";
 import { PERMISSIONS } from "@/lib/authz";
 import { STATUS_LABELS, monthsElapsed } from "@/lib/assets";
@@ -304,7 +305,7 @@ export const REPORTS: ReportDef[] = [
           cost: num(r.cost),
           status: r.status === "DONE" ? "Done" : "Skipped",
         })),
-        note: `Total cost: ${total.toLocaleString("en-US", { style: "currency", currency: "USD" })} across ${rows.length} records.`,
+        note: `Total cost: ${formatMoney(total)} across ${rows.length} records.`,
       };
     },
   },

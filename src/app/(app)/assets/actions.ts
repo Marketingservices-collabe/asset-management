@@ -24,12 +24,20 @@ async function relevantDefs(orgId: string, categoryId?: string | null) {
   });
 }
 
+/** A location belongs to one site, so picking a location is enough to know the site. */
+async function fillSiteFromLocation(orgId: string, input: { siteId?: string | null; locationId?: string | null }) {
+  if (!input.locationId || input.siteId) return;
+  const loc = await db.location.findFirst({ where: { id: input.locationId, orgId }, select: { siteId: true } });
+  if (loc) input.siteId = loc.siteId;
+}
+
 export async function createAsset(_state: FormState, formData: FormData): Promise<FormState> {
   const ctx = await requirePermission(PERMISSIONS.ASSET_CREATE);
   const parsed = parseForm(assetSchema, formData);
   if (!parsed.success) return parsed.state;
   const input = parsed.data;
 
+  await fillSiteFromLocation(ctx.orgId, input);
   const refErr = await validateAssetRefs(ctx.orgId, input);
   if (refErr) return { error: refErr, values: flat(formData) };
 
@@ -79,6 +87,7 @@ export async function updateAsset(_state: FormState, formData: FormData): Promis
   if (!parsed.success) return parsed.state;
   const input = parsed.data;
 
+  await fillSiteFromLocation(ctx.orgId, input);
   const refErr = await validateAssetRefs(ctx.orgId, input);
   if (refErr) return { error: refErr, values: flat(formData) };
 
