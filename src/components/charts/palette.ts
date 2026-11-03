@@ -12,8 +12,8 @@ export const CHART_COLORS = [
 
 export const STATUS_COLORS: Record<string, string> = {
   AVAILABLE: "#10b981",
-  CHECKED_OUT: "#f59e0b",
-  LEASED: "#3b82f6",
+  CHECKED_OUT: "#0ea5e9",
+  LEASED: "#6366f1",
   RESERVED: "#8b5cf6",
   UNDER_REPAIR: "#fb923c",
   DISPOSED: "#94a3b8",

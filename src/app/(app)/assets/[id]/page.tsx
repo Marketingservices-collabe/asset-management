@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Wrench, ShieldCheck } from "lucide-react";
+import { Wrench, ShieldCheck, ChevronLeft, Pencil, UserRound, Building2, MapPin } from "lucide-react";
 import { requireContext } from "@/lib/session";
 import { db } from "@/lib/db";
 import { can, PERMISSIONS } from "@/lib/authz";
 import { formatDate, formatMoney } from "@/lib/utils";
 import { monthsElapsed } from "@/lib/assets";
 import { effectiveStatus } from "@/lib/maintenance";
-import { PageHeader } from "@/components/page-header";
+import { AssetIcon } from "@/components/asset-icon";
+import { Avatar } from "@/components/avatar";
 import { Card, SectionTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
@@ -80,19 +81,6 @@ export default async function AssetDetailPage({ params }: { params: Promise<{ id
     }),
   ]);
 
-  const details: [string, React.ReactNode][] = [
-    ["Type", asset.category?.name ?? "—"],
-    ["Serial number", asset.serialNo ?? "—"],
-    ["Site", asset.site?.name ?? "—"],
-    ["Location", asset.location?.name ?? "—"],
-    ["Department", asset.department?.name ?? "—"],
-    [
-      "Assigned to",
-      openCheckout?.person?.name
-        ? `${openCheckout.person.name} (checked out)`
-        : asset.assignedPerson?.name ?? "—",
-    ],
-  ];
 
   // Only show purchase/finance rows that actually have something in them.
   const depreciates = asset.depreciationMethod !== "NONE" && !!asset.usefulLifeMonths;
@@ -114,35 +102,107 @@ export default async function AssetDetailPage({ params }: { params: Promise<{ id
   ];
   const financials = financialRows.filter(([, , show]) => show).map(([k, val]) => [k, val] as [string, React.ReactNode]);
 
+  const holder = openCheckout?.person?.name ?? asset.assignedPerson?.name ?? null;
+  const SPEC_KEYS = ["brand", "model", "processor", "ram", "storage", "screen_size", "condition"];
+  const specChips = SPEC_KEYS.flatMap((k) => {
+    const fv = asset.fieldValues.find((v) => v.fieldDef.key === k);
+    const val = fv?.valueText;
+    return val && val !== "Not Sure" ? [[fv!.fieldDef.label, val] as [string, string]] : [];
+  });
+
+  const otherFields = asset.fieldValues.filter(
+    (fv) => !specChips.some(([label]) => label === fv.fieldDef.label) && renderFieldValue(fv) !== "—",
+  );
+
   return (
-    <>
-      <PageHeader
-        title={asset.name}
-        description={`Tag ${asset.tagId}`}
-        back={{ label: "Assets", href: "/assets" }}
-        action={canEdit ? { label: "Edit", href: `/assets/${asset.id}/edit` } : undefined}
-      />
+    <div className="space-y-6">
+      <Link
+        href="/assets"
+        className="inline-flex items-center gap-1 text-sm text-[var(--muted)] transition-colors hover:text-[var(--fg)]"
+      >
+        <ChevronLeft size={15} /> All assets
+      </Link>
+
+      {/* Hero */}
+      <Card className="relative overflow-hidden p-0">
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-brand/[0.06] via-transparent to-transparent" />
+        <div className="relative flex flex-col gap-5 p-6 sm:flex-row sm:items-start">
+          <AssetIcon type={asset.category?.name} name={asset.name} size="lg" />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-2xl font-semibold tracking-tight">{asset.name}</h1>
+              <StatusBadge status={asset.status} />
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-[var(--muted)]">
+              <span className="font-mono">{asset.tagId}</span>
+              {asset.serialNo ? <span>S/N {asset.serialNo}</span> : null}
+              {asset.category ? <span>{asset.category.name}</span> : null}
+            </div>
+            {specChips.length > 0 ? (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {specChips.map(([label, value]) => (
+                  <span
+                    key={label}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)]/60 px-2.5 py-1 text-xs"
+                  >
+                    <span className="text-[var(--muted)]">{label}</span>
+                    <span className="font-medium">{value}</span>
+                  </span>
+                ))}
+              </div>
+            ) : null}
+            {asset.description ? <p className="mt-4 text-sm text-[var(--muted)]">{asset.description}</p> : null}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {canEdit ? <StatusControl id={asset.id} status={asset.status} /> : null}
+            {canEdit ? (
+              <Link
+                href={`/assets/${asset.id}/edit`}
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[var(--border-strong)] bg-[var(--card)] px-3 text-sm font-medium hover:bg-[var(--surface-2)]"
+              >
+                <Pencil size={14} /> Edit
+              </Link>
+            ) : null}
+          </div>
+        </div>
+
+        {/* Holder strip */}
+        <div className="grid border-t border-[var(--border)] sm:grid-cols-3">
+          <div className="flex items-center gap-3 p-5 sm:col-span-1">
+            {holder ? (
+              <>
+                <Avatar name={holder} size="lg" />
+                <div className="min-w-0">
+                  <div className="text-xs text-[var(--muted)]">{openCheckout ? "Checked out to" : "Assigned to"}</div>
+                  <div className="truncate font-medium">{holder}</div>
+                  {openCheckout ? (
+                    <div className="text-xs text-[var(--muted)]">since {formatDate(openCheckout.checkedOutAt)}</div>
+                  ) : null}
+                </div>
+              </>
+            ) : (
+              <>
+                <span className="grid h-11 w-11 place-items-center rounded-full border border-dashed border-[var(--border-strong)] text-[var(--muted)]">
+                  <UserRound size={18} />
+                </span>
+                <div>
+                  <div className="text-xs text-[var(--muted)]">Assigned to</div>
+                  <div className="font-medium">Nobody — spare</div>
+                </div>
+              </>
+            )}
+          </div>
+          <InfoCell icon={<Building2 size={16} />} label="Department" value={asset.department?.name} />
+          <InfoCell
+            icon={<MapPin size={16} />}
+            label="Location"
+            value={[asset.site?.name, asset.location?.name].filter(Boolean).join(" › ") || undefined}
+          />
+        </div>
+      </Card>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
-          <Card>
-            <div className="mb-3 flex items-center justify-between">
-              <SectionTitle className="mb-0">Overview</SectionTitle>
-              <div className="flex items-center gap-2">
-                <StatusBadge status={asset.status} />
-                {canEdit ? <StatusControl id={asset.id} status={asset.status} /> : null}
-              </div>
-            </div>
-            {asset.description ? <p className="mb-3 text-sm text-[var(--muted)]">{asset.description}</p> : null}
-            <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
-              {details.map(([k, val]) => (
-                <div key={k} className="flex justify-between gap-4 text-sm">
-                  <dt className="text-[var(--muted)]">{k}</dt>
-                  <dd className="text-right">{val}</dd>
-                </div>
-              ))}
-            </dl>
-          </Card>
 
           {showFinancials && financials.length > 0 ? (
             <Card>
@@ -158,11 +218,11 @@ export default async function AssetDetailPage({ params }: { params: Promise<{ id
             </Card>
           ) : null}
 
-          {asset.fieldValues.length > 0 ? (
+          {otherFields.length > 0 ? (
             <Card>
-              <SectionTitle>Specs &amp; details</SectionTitle>
+              <SectionTitle>Other details</SectionTitle>
               <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
-                {asset.fieldValues.map((fv) => (
+                {otherFields.map((fv) => (
                   <div key={fv.id} className="flex justify-between gap-4 text-sm">
                     <dt className="text-[var(--muted)]">{fv.fieldDef.label}</dt>
                     <dd className="text-right">{renderFieldValue(fv)}</dd>
@@ -282,11 +342,12 @@ export default async function AssetDetailPage({ params }: { params: Promise<{ id
             {asset.events.length === 0 ? (
               <p className="text-sm text-[var(--muted)]">No events yet.</p>
             ) : (
-              <ol className="space-y-2">
+              <ol className="relative ml-3 border-l border-[var(--border)]">
                 {asset.events.map((e) => (
-                  <li key={e.id} className="flex gap-3 text-sm">
-                    <span className="w-28 shrink-0 text-[var(--muted)]">{formatDate(e.at)}</span>
-                    <span>{e.summary}</span>
+                  <li key={e.id} className="relative mb-4 pl-5 text-sm last:mb-0">
+                    <span className="absolute -left-[5px] top-1.5 h-2.5 w-2.5 rounded-full bg-brand ring-4 ring-[var(--card)]" />
+                    <div className="font-medium">{e.summary}</div>
+                    <div className="text-xs text-[var(--muted)]">{formatDate(e.at)}</div>
                   </li>
                 ))}
               </ol>
@@ -348,7 +409,19 @@ export default async function AssetDetailPage({ params }: { params: Promise<{ id
           ) : null}
         </div>
       </div>
-    </>
+    </div>
+  );
+}
+
+function InfoCell({ icon, label, value }: { icon: React.ReactNode; label: string; value?: string | null }) {
+  return (
+    <div className="flex items-center gap-3 border-t border-[var(--border)] p-5 sm:border-l sm:border-t-0">
+      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[var(--surface-2)] text-[var(--muted)]">{icon}</span>
+      <div className="min-w-0">
+        <div className="text-xs text-[var(--muted)]">{label}</div>
+        <div className="truncate font-medium">{value || "—"}</div>
+      </div>
+    </div>
   );
 }
 
