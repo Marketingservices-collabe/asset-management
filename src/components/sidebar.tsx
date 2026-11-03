@@ -22,7 +22,7 @@ export function Sidebar({ permissions }: { permissions: string[] }) {
   const [open, setOpen] = useState(() => more.some(isActive));
 
   return (
-    <nav className="flex flex-col gap-4 p-3 text-sm">
+    <nav className="flex flex-col gap-4 px-3 py-4 text-sm">
       <ul className="space-y-0.5">
         {primary.map((i) => (
           <NavLink key={i.href} item={i} active={isActive(i)} />
@@ -75,13 +75,14 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
         className={cn(
           "group flex items-center gap-2.5 rounded-lg px-3 py-2 transition-colors",
           active
-            ? "bg-brand text-brand-fg shadow-[var(--shadow)]"
-            : "text-[var(--fg)]/80 hover:bg-[var(--surface-2)] hover:text-[var(--fg)]",
+            ? "bg-brand/10 font-medium text-brand dark:bg-brand/15"
+            : "text-[var(--fg)]/75 hover:bg-[var(--surface-2)] hover:text-[var(--fg)]",
         )}
       >
         <Icon
-          size={16}
-          className={cn("shrink-0", active ? "text-brand-fg" : "text-[var(--muted)] group-hover:text-[var(--fg)]")}
+          size={17}
+          strokeWidth={active ? 2.2 : 1.9}
+          className={cn("shrink-0", active ? "text-brand" : "text-[var(--muted)] group-hover:text-[var(--fg)]")}
         />
         <span className="truncate">{item.label}</span>
       </Link>
